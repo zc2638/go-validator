@@ -1,6 +1,6 @@
 package validRule
 
-import "validator/typ"
+import "github.com/zc2638/go-validator/typ"
 
 /**
  * Created by zc on 2019-08-12.

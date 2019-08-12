@@ -2,10 +2,10 @@ package validator
 
 import (
 	"context"
+	"github.com/zc2638/go-validator/typ"
+	"github.com/zc2638/go-validator/validRule"
 	"net/http"
 	"reflect"
-	"validator/typ"
-	"validator/validRule"
 )
 
 /**

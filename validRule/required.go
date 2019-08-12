@@ -1,8 +1,8 @@
 package validRule
 
 import (
+	"github.com/zc2638/go-validator/typ"
 	"strings"
-	"validator/typ"
 )
 
 /**

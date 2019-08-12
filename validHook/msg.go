@@ -2,8 +2,8 @@ package validHook
 
 import (
 	"errors"
-	"validator"
-	"validator/typ"
+	"github.com/zc2638/go-validator"
+	"github.com/zc2638/go-validator/typ"
 )
 
 /**
