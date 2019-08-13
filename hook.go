@@ -1,24 +1,23 @@
-package validHook
+package validator
 
 import (
 	"errors"
-	"github.com/zc2638/go-validator"
 	"github.com/zc2638/go-validator/typ"
 )
 
 /**
- * Created by zc on 2019-08-12.
+ * Created by zc on 2019-08-13.
  */
 
-type Msg struct {
+type HookMsg struct {
 	s string
 }
 
-func (h *Msg) Name() string {
+func (h *HookMsg) Name() string {
 	return "msg"
 }
 
-func (h *Msg) SetCondition(cs ...interface{}) error {
+func (h *HookMsg) SetCondition(cs ...interface{}) error {
 	if len(cs) > 0 {
 		tc := typ.NewTypeC(cs[0], typ.String)
 		if !tc.CheckKind() {
@@ -29,7 +28,7 @@ func (h *Msg) SetCondition(cs ...interface{}) error {
 	return nil
 }
 
-func (h *Msg) Fire(e *validator.VdrEngine) error {
+func (h *HookMsg) Fire(e *VdrEngine) error {
 	if e.Err != nil {
 		e.Err = errors.New(h.s)
 	}

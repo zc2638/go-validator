@@ -12,18 +12,12 @@ import (
 type Validation interface {
 	Name() string
 	SetCondition(...interface{}) error
-	Valid(interface{}) error
-}
-
-type Hook interface {
-	Name() string
-	SetCondition(...interface{}) error
 	Fire(*VdrEngine) error
 }
 
 type Validate interface {
 	Register(...Validation)
-	SetHook(...Hook)
+	SetHook(...Validation)
 	SetContext(context.Context) Validate
 	SetHttpRequest(*http.Request) Validate
 	MakeStruct(interface{}) Validate

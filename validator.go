@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"github.com/zc2638/go-validator/typ"
-	"github.com/zc2638/go-validator/validRule"
 	"net/http"
 	"reflect"
 )
@@ -22,7 +21,7 @@ type vdr struct {
 	ctx          context.Context
 	req          *http.Request
 	source       map[string]Validation
-	hooks        map[string]Hook
+	hooks        map[string]Validation
 	customSource map[string]Validation
 	cds          []*Cond
 	err          error
@@ -31,10 +30,10 @@ type vdr struct {
 // 创建一个默认的验证器
 func NewVdr() Validate {
 
-	required := new(validRule.Required)
-	types := new(validRule.Types)
-	max := new(validRule.Max)
-	min := new(validRule.Min)
+	required := new(RuleRequired)
+	types := new(RuleTypes)
+	max := new(RuleMax)
+	min := new(RuleMin)
 
 	validation := new(vdr)
 	validation.source = map[string]Validation{
@@ -44,10 +43,10 @@ func NewVdr() Validate {
 		min.Name():      min,
 	}
 
-	//msgHook := new(validHook.Msg)
-	//validation.hooks = map[string]Hook{
-	//	msgHook.Name(): msgHook,
-	//}
+	msg := new(HookMsg)
+	validation.hooks = map[string]Validation{
+		msg.Name(): msg,
+	}
 	return validation
 }
 
@@ -81,12 +80,12 @@ func (v *vdr) Register(rules ...Validation) {
 	}
 }
 
-func (v *vdr) SetHook(hooks ...Hook) {
+func (v *vdr) SetHook(hooks ...Validation) {
 	if hooks == nil || len(hooks) == 0 {
 		return
 	}
 	if v.hooks == nil {
-		v.hooks = make(map[string]Hook)
+		v.hooks = make(map[string]Validation)
 	}
 	for _, hook := range hooks {
 		if hook.Name() != "" {
@@ -192,18 +191,28 @@ func (v *vdr) verify() {
 	var hookCds = make([]*Cond, 0)
 	for _, cond := range v.cds {
 
+		if v.err != nil {
+			break
+		}
 		var hookCond = &Cond{
 			key:   cond.key,
 			value: cond.value,
 		}
 		for _, condition := range cond.cs {
+
+			engine := &VdrEngine{
+				Name: condition.Name,
+				Err:  v.err,
+				Val:  cond.value,
+			}
+
 			if v.err == nil {
 				if s, ok := v.source[condition.Name]; ok {
 					if err := s.SetCondition(condition.value...); err != nil {
 						v.err = err
 						break
 					}
-					if err := s.Valid(cond.value); err != nil {
+					if err := s.Fire(engine); err != nil {
 						if cond.err != nil {
 							v.err = cond.err
 						} else {
@@ -212,14 +221,13 @@ func (v *vdr) verify() {
 					}
 				}
 			}
-
 			if v.err == nil {
 				if sc, ok := v.customSource[condition.Name]; ok {
 					if err := sc.SetCondition(condition.value...); err != nil {
 						v.err = err
 						break
 					}
-					if err := sc.Valid(cond.value); err != nil {
+					if err := sc.Fire(engine); err != nil {
 						if cond.err != nil {
 							v.err = cond.err
 						} else {
