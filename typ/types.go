@@ -48,6 +48,8 @@ func (t *typeC) CheckKind() bool {
 		return t.typ == Float32
 	case reflect.Float64:
 		return t.typ == Float64
+	case reflect.Bool:
+		return t.typ == Bool
 	default:
 		return false
 	}
@@ -85,6 +87,8 @@ func (t *typeC) Convert() (interface{}, error) {
 		str = strconv.FormatFloat(float64(t.val.(float32)), 'f', -1, 32)
 	case reflect.Float64:
 		str = strconv.FormatFloat(t.val.(float64), 'f', -1, 64)
+	case reflect.Bool:
+		str = strconv.FormatBool(t.val.(bool))
 	default:
 		return nil, TypeNotSupport
 	}
@@ -176,6 +180,11 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 		res, err = strconv.ParseFloat(str, 64)
 		if err != nil {
 			err = TypeNotFloat64
+		}
+	case Bool:
+		res, err = strconv.ParseBool(str)
+		if err != nil {
+			err = TypeNotBool
 		}
 	}
 	return res, err

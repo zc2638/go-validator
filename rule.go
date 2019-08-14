@@ -16,6 +16,9 @@ type RuleRequired struct{}
 func (*RuleRequired) Name() string                      { return "required" }
 func (*RuleRequired) SetCondition(...interface{}) error { return nil }
 func (*RuleRequired) Fire(e *VdrEngine) error {
+	if e.Val == nil {
+		return typ.NotRequired
+	}
 	tc := typ.NewTypeC(e.Val, typ.String)
 	res, err := tc.Convert()
 	if err != nil {

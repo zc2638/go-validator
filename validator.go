@@ -5,6 +5,7 @@ import (
 	"github.com/zc2638/go-validator/typ"
 	"net/http"
 	"reflect"
+	"strings"
 )
 
 /**
@@ -12,6 +13,8 @@ import (
  */
 
 const ValidTagName = "vdr"
+const CondMark = ","
+const Delimiter = "="
 
 // TODO 是否校验不存在的规则存在时抛错
 // TODO 增加一个并发安全的验证器
@@ -23,30 +26,18 @@ type vdr struct {
 	source       map[string]Validation
 	hooks        map[string]Validation
 	customSource map[string]Validation
-	cds          []*Cond
+	set          []string
+	engines      []*VdrEngine
 	err          error
+	mark         string
+	delimiter    string
 }
 
 // 创建一个默认的验证器
 func NewVdr() Validate {
-
-	required := new(RuleRequired)
-	types := new(RuleTypes)
-	max := new(RuleMax)
-	min := new(RuleMin)
-
 	validation := new(vdr)
-	validation.source = map[string]Validation{
-		required.Name(): required,
-		types.Name():    types,
-		max.Name():      max,
-		min.Name():      min,
-	}
-
-	msg := new(HookMsg)
-	validation.hooks = map[string]Validation{
-		msg.Name(): msg,
-	}
+	validation.register(new(RuleRequired), new(RuleTypes), new(RuleMax), new(RuleMin))
+	validation.SetHook(new(HookMsg))
 	return validation
 }
 
@@ -58,9 +49,13 @@ func (v *vdr) register(rules ...Validation) {
 	if v.source == nil {
 		v.source = make(map[string]Validation)
 	}
+	if v.set == nil {
+		v.set = make([]string, 0)
+	}
 	for _, rule := range rules {
 		if rule.Name() != "" {
 			v.source[rule.Name()] = rule
+			v.set = append(v.set, rule.Name())
 		}
 	}
 }
@@ -87,9 +82,13 @@ func (v *vdr) SetHook(hooks ...Validation) {
 	if v.hooks == nil {
 		v.hooks = make(map[string]Validation)
 	}
+	if v.set == nil {
+		v.set = make([]string, 0)
+	}
 	for _, hook := range hooks {
 		if hook.Name() != "" {
 			v.hooks[hook.Name()] = hook
+			v.set = append(v.set, hook.Name())
 		}
 	}
 }
@@ -121,7 +120,7 @@ func (v *vdr) MakeStruct(s interface{}) Validate {
 			fv := val.Field(i)
 
 			if tag, ok := field.Tag.Lookup(ValidTagName); ok {
-				// TODO 暂时只支持常用类型，byte，map，slice，struct等后期补充
+				// TODO 暂时只支持常用类型，map，slice，struct等后期补充
 				var value interface{}
 				switch field.Type.Kind() {
 				case reflect.String:
@@ -134,9 +133,13 @@ func (v *vdr) MakeStruct(s interface{}) Validate {
 					value = fv.Float()
 				case reflect.Bool:
 					value = fv.Bool()
-				}
-				if value == nil {
-					continue
+				case reflect.Interface:
+					value = fv.Interface()
+				case reflect.Map:
+				case reflect.Array:
+				case reflect.Slice:
+				case reflect.Struct:
+				case reflect.Ptr:
 				}
 				v.MakeValue(value, tag)
 			}
@@ -175,117 +178,123 @@ func (v *vdr) MakeSlice(set ...[]string) Validate {
 
 // 创建值验证
 func (v *vdr) MakeValue(val interface{}, exps ...string) Validate {
-	v.cds = append(v.cds, newCond(val, nil, exps...))
+	v.parse(val, exps...)
 	return v
 }
 
-// 校验
+// TODO 解析条件
+func (v *vdr) parse(val interface{}, exps ...string) {
+
+	mark := CondMark
+	delimiter := Delimiter
+	if v.mark != "" {
+		mark = v.mark
+	}
+	if v.delimiter != "" {
+		delimiter = v.delimiter
+	}
+
+	expSet := strings.Split(strings.Join(exps, mark), mark)
+	var cs = make([]*VdrEngine, 0)
+	var comb, expKey string
+	for _, e := range expSet {
+		if e == "" {
+			continue
+		}
+
+		// 如果匹配上，则exp赋值
+		var exp string
+		for _, s := range v.set {
+			if strings.HasPrefix(e, s) {
+				exp = s
+				break
+			}
+		}
+
+		// 如果exp为空，则表示未匹配上，comb做拼接
+		if exp == "" {
+			comb += mark + e
+			continue
+		}
+
+		if expKey == "" {
+			expKey = exp
+		}
+
+		// 如果exp不为空，则表示匹配上了，将comb内容做消化，comb重新赋值
+		if comb != "" {
+			expVal := strings.TrimPrefix(strings.TrimPrefix(comb, expKey+delimiter), expKey)
+			cs = append(cs, &VdrEngine{
+				Name:   expKey,
+				Params: []interface{}{expVal},
+				Val:    val,
+			})
+			expKey = exp
+		}
+		comb = e
+	}
+	if comb != "" {
+		for _, s := range v.set {
+			if strings.HasPrefix(comb, s) {
+				expVal := strings.TrimPrefix(strings.TrimPrefix(comb, s+delimiter), s)
+				cs = append(cs, &VdrEngine{
+					Name:   expKey,
+					Params: []interface{}{expVal},
+					Val:    val,
+				})
+				break
+			}
+		}
+	}
+	if v.engines == nil {
+		v.engines = make([]*VdrEngine, 0)
+	}
+	v.engines = append(v.engines, cs...)
+}
+
 func (v *vdr) verify() {
 	if v.err != nil {
 		return
 	}
-	if v.cds == nil {
+	if v.engines == nil {
 		return
 	}
 
-	var hookCds = make([]*Cond, 0)
-	for _, cond := range v.cds {
-
-		if v.err != nil {
-			break
-		}
-		var hookCond = &Cond{
-			key:   cond.key,
-			value: cond.value,
-		}
-		for _, condition := range cond.cs {
-
-			engine := &VdrEngine{
-				Name: condition.Name,
-				Err:  v.err,
-				Val:  cond.value,
-			}
-
-			if v.err == nil {
-				if s, ok := v.source[condition.Name]; ok {
-					if err := s.SetCondition(condition.value...); err != nil {
-						v.err = err
-						break
-					}
-					if err := s.Fire(engine); err != nil {
-						if cond.err != nil {
-							v.err = cond.err
-						} else {
-							v.err = err
-						}
-					}
+	for _, e := range v.engines {
+		if v.err == nil {
+			if s, ok := v.source[e.Name]; ok {
+				if err := s.SetCondition(e.Params...); err != nil {
+					v.err = err
+					break
+				}
+				if err := s.Fire(e); err != nil {
+					v.err = err
 				}
 			}
-			if v.err == nil {
-				if sc, ok := v.customSource[condition.Name]; ok {
-					if err := sc.SetCondition(condition.value...); err != nil {
-						v.err = err
-						break
-					}
-					if err := sc.Fire(engine); err != nil {
-						if cond.err != nil {
-							v.err = cond.err
-						} else {
-							v.err = err
-						}
-					}
-				}
-			}
-
-			_, ok := v.hooks[condition.Name]
-			if ok {
-				if hookCond.cs == nil {
-					hookCond.cs = make([]Condition, 0)
-				}
-				hookCond.cs = append(hookCond.cs, Condition{
-					Name:  condition.Name,
-					value: condition.value,
-				})
-			}
-		}
-
-		if hookCond.cs != nil {
-			hookCds = append(hookCds, hookCond)
 		}
 	}
 
-	if len(hookCds) == 0 {
-		return
-	}
-	for _, cond := range hookCds {
-		for _, condition := range cond.cs {
-			h := v.hooks[condition.Name]
-			if err := h.SetCondition(condition.value...); err != nil {
+	for _, e := range v.engines {
+		if h, ok := v.source[e.Name]; ok {
+			if err := h.SetCondition(e.Params...); err != nil {
 				v.err = err
 				break
 			}
-			engine := &VdrEngine{
-				Name: condition.Name,
-				Err:  v.err,
-				Val:  cond.value,
-			}
-
-			if err := h.Fire(engine); err != nil {
+			if err := h.Fire(e); err != nil {
 				v.err = err
 				break
 			}
-			v.setEngine(engine)
+			if e.Err != nil {
+				v.err = e.Err
+				break
+			}
 		}
 	}
-}
-
-func (v *vdr) setEngine(e *VdrEngine) {
-	v.err = e.Err
 }
 
 // 清空
 func (v *vdr) reset() {
-	v.cds = nil
+	v.engines = nil
 	v.ctx = nil
 	v.req = nil
 	v.err = nil
@@ -300,26 +309,12 @@ func (v *vdr) Check() error {
 }
 
 type pVdr struct {
-	source       map[string]Validation
-	customSource map[string]Validation
+	source []Validation
+	hooks  []Validation
 }
 
 func NewPVdr() *pVdr {
 	return new(pVdr)
-}
-
-func (v *pVdr) register(rules ...Validation) {
-	if rules == nil || len(rules) == 0 {
-		return
-	}
-	if v.source == nil {
-		v.source = make(map[string]Validation)
-	}
-	for _, rule := range rules {
-		if rule.Name() != "" {
-			v.source[rule.Name()] = rule
-		}
-	}
 }
 
 func (v *pVdr) Register(rules ...Validation) {
@@ -327,64 +322,46 @@ func (v *pVdr) Register(rules ...Validation) {
 		return
 	}
 	if v.source == nil {
-		v.source = make(map[string]Validation)
+		v.source = make([]Validation, 0)
 	}
-	for _, rule := range rules {
-		if rule.Name() != "" {
-			v.customSource[rule.Name()] = rule
-		}
+	v.source = append(v.source, rules...)
+}
+
+func (v *pVdr) SetHook(hooks ...Validation) {
+	if hooks == nil || len(hooks) == 0 {
+		return
 	}
+	if v.hooks == nil {
+		v.hooks = make([]Validation, 0)
+	}
+	v.hooks = append(v.hooks, hooks...)
 }
 
-func (v *pVdr) Check() error {
-	return v.base().Check()
+func (v *pVdr) base() Validate {
+	vdr := NewVdr()
+	vdr.Register(v.source...)
+	vdr.SetHook(v.hooks...)
+	return vdr
 }
 
-func (v *pVdr) SetContext(ctx context.Context) Validate {
-	return v.base().SetContext(ctx)
-}
-
-func (v *pVdr) SetHttpRequest(r *http.Request) Validate {
-	return v.base().SetHttpRequest(r)
-}
-
-func (v *pVdr) MakeStruct(s interface{}) Validate {
-	return v.base().MakeStruct(s)
-}
-
-func (v *pVdr) MakeMap(ms map[string]string) Validate {
-	return v.base().MakeMap(ms)
-}
-
-func (v *pVdr) MakeSlice(set ...[]string) Validate {
-	return v.MakeSlice(set...)
-}
-
+func (v *pVdr) Check() error                            { return v.base().Check() }
+func (v *pVdr) SetContext(ctx context.Context) Validate { return v.base().SetContext(ctx) }
+func (v *pVdr) SetHttpRequest(r *http.Request) Validate { return v.base().SetHttpRequest(r) }
+func (v *pVdr) MakeStruct(s interface{}) Validate       { return v.base().MakeStruct(s) }
+func (v *pVdr) MakeMap(ms map[string]string) Validate   { return v.base().MakeMap(ms) }
+func (v *pVdr) MakeSlice(set ...[]string) Validate      { return v.MakeSlice(set...) }
 func (v *pVdr) MakeValue(val interface{}, exps ...string) Validate {
 	return v.base().MakeValue(val, exps...)
 }
 
-func (v *pVdr) base() Validate {
-	return &vdr{
-		source:       v.source,
-		customSource: v.customSource,
-	}
-}
-
 var vde = NewPVdr()
 
-func Register(rules ...Validation) { vde.Register(rules...) }
-
-func SetContext(ctx context.Context) Validate { return vde.SetContext(ctx) }
-
-func SetHttpRequest(r *http.Request) Validate { return vde.SetHttpRequest(r) }
-
-func MakeStruct(s interface{}) Validate { return vde.MakeStruct(s) }
-
-func MakeMap(ms map[string]string) Validate { return vde.MakeMap(ms) }
-
-func MakeSlice(set ...[]string) Validate { return vde.MakeSlice(set...) }
-
+func Register(rules ...Validation)                       { vde.Register(rules...) }
+func SetHook(hooks ...Validation)                        { vde.SetHook(hooks...) }
+func SetContext(ctx context.Context) Validate            { return vde.SetContext(ctx) }
+func SetHttpRequest(r *http.Request) Validate            { return vde.SetHttpRequest(r) }
+func MakeStruct(s interface{}) Validate                  { return vde.MakeStruct(s) }
+func MakeMap(ms map[string]string) Validate              { return vde.MakeMap(ms) }
+func MakeSlice(set ...[]string) Validate                 { return vde.MakeSlice(set...) }
 func MakeValue(val interface{}, exps ...string) Validate { return vde.MakeValue(val, exps...) }
-
-func Check() error { return vde.Check() }
+func Check() error                                       { return vde.Check() }

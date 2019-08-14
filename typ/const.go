@@ -17,6 +17,7 @@ const (
 	TypeNotUint64  = ValidError("type is not uint64")
 	TypeNotFloat32 = ValidError("type is not float32")
 	TypeNotFloat64 = ValidError("type is not float64")
+	TypeNotBool    = ValidError("type is not bool")
 	TypeNotStruct  = ValidError("type is not struct")
 	NumberMaxLimit = ValidError("number is over max limit")
 	NumberMinLimit = ValidError("number is below min limit")
@@ -27,18 +28,20 @@ const (
 )
 
 const (
-	String  = "string"
-	Int     = "int"
-	Int8    = "int8"
-	Int16   = "int16"
-	Int32   = "int32"
-	Int64   = "int64"
-	Uint    = "uint"
-	Uint8   = "uint8"
-	Uint16  = "uint16"
-	Uint32  = "uint32"
-	Uint64  = "uint64"
-	Float32 = "float32"
-	Float64 = "float64"
-	Bool    = "bool"
+	String     = "string"
+	Int        = "int"
+	Int8       = "int8"
+	Int16      = "int16"
+	Int32      = "int32"
+	Int64      = "int64"
+	Uint       = "uint"
+	Uint8      = "uint8"
+	Uint16     = "uint16"
+	Uint32     = "uint32"
+	Uint64     = "uint64"
+	Float32    = "float32"
+	Float64    = "float64"
+	Bool       = "bool"
+	Complex64  = "complex64"
+	Complex128 = "complex128"
 )

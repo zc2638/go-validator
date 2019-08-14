@@ -28,7 +28,9 @@ type Validate interface {
 }
 
 type VdrEngine struct {
-	Name string
-	Err error
-	Val interface{}
+	Name   string        // rule name
+	Params []interface{} // rule params
+	Err    error
+	Key    string
+	Val    interface{}
 }
