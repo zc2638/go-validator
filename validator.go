@@ -3,7 +3,6 @@ package validator
 import (
 	"context"
 	"github.com/zc2638/go-validator/typ"
-	"net/http"
 	"reflect"
 	"strings"
 )
@@ -22,7 +21,6 @@ const Delimiter = "="
 // 两种验证器类型：1. 父验证器，用于自动创建子验证器 2. 子验证器，用于校验数据
 type vdr struct {
 	ctx          context.Context
-	req          *http.Request
 	source       map[string]Validation
 	hooks        map[string]Validation
 	customSource map[string]Validation
@@ -75,6 +73,7 @@ func (v *vdr) Register(rules ...Validation) {
 	}
 }
 
+// 设置hook
 func (v *vdr) SetHook(hooks ...Validation) {
 	if hooks == nil || len(hooks) == 0 {
 		return
@@ -94,20 +93,77 @@ func (v *vdr) SetHook(hooks ...Validation) {
 }
 
 // 添加context，用于键校验
-func (v *vdr) SetContext(context context.Context) Validate {
-	v.ctx = context
-	return v
-}
-
-// 添加*http.Request,用于校验
-func (v *vdr) SetHttpRequest(r *http.Request) Validate {
-	v.req = r
+func (v *vdr) SetContext(ctx context.Context) Validate {
+	v.ctx = ctx
 	return v
 }
 
 // 创建struct验证
 func (v *vdr) MakeStruct(s interface{}) Validate {
+	if v.ctx == nil {
+		v.err = typ.WithoutContext
+		return v
+	}
 
+	t := reflect.TypeOf(s)
+	if t.Kind() != reflect.Ptr {
+		v.err = typ.StructPtrError
+		return v
+	}
+	t = t.Elem()
+
+	ts := typ.NewTypeS(t, reflect.ValueOf(s).Elem())
+	fieldSet := ts.GetFiledSet()
+
+	for _, field := range fieldSet {
+		fieldName := field.Name
+		tag := field.Tag.Get("json")
+		if tag != "" {
+			if idx := strings.Index(tag, ","); idx != -1 {
+				fieldName = tag[:idx]
+			} else {
+				fieldName = tag
+			}
+		}
+
+		if err := ts.SetValue(field, v.ctx.Value(fieldName)); err != nil {
+			v.err = err
+			return v
+		}
+	}
+	return v.MakeStructValue(s)
+}
+
+// 创建map验证
+// "id": "required,max=20"
+func (v *vdr) MakeMap(ms map[string]string) Validate {
+	if v.ctx == nil {
+		v.err = typ.WithoutContext
+		return v
+	}
+	for k, m := range ms {
+		v.MakeValue(v.ctx.Value(k), m)
+	}
+	return v
+}
+
+// 创建slice验证
+// ["id", "required,max=20", "min=10"], ["age", "required", "max=100"]
+func (v *vdr) MakeSlice(set ...[]string) Validate {
+	if v.ctx == nil {
+		v.err = typ.WithoutContext
+		return v
+	}
+	for _, s := range set {
+		if len(s) > 0 {
+			v.MakeValue(v.ctx.Value(s[0]), s[1:]...)
+		}
+	}
+	return v
+}
+
+// 创建struct值验证
+func (v *vdr) MakeStructValue(s interface{}) Validate {
 	val := reflect.ValueOf(s)
 	if val.Kind() == reflect.Ptr && !val.IsNil() {
 		val = val.Elem()
@@ -143,34 +199,6 @@ func (v *vdr) MakeStruct(s interface{}) Validate {
 				}
 				v.MakeValue(value, tag)
 			}
-		}
-	}
-	return v
-}
-
-// 创建map验证
-// "id": "required,max=20"
-func (v *vdr) MakeMap(ms map[string]string) Validate {
-	if v.ctx == nil {
-		v.err = typ.WithoutContext
-		return v
-	}
-	for k, m := range ms {
-		v.MakeValue(v.ctx.Value(k), m)
-	}
-	return v
-}
-
-// 创建slice验证
-// ["id", "required,max=20", "min=10"], ["age", "required", "max=100"]
-func (v *vdr) MakeSlice(set ...[]string) Validate {
-	if v.ctx == nil {
-		v.err = typ.WithoutContext
-		return v
-	}
-	for _, s := range set {
-		if len(s) > 0 {
-			v.MakeValue(v.ctx.Value(s[0]), s[1:]...)
 		}
 	}
 	return v
@@ -296,7 +324,6 @@ func (v *vdr) verify() {
 func (v *vdr) reset() {
 	v.engines = nil
 	v.ctx = nil
-	v.req = nil
 	v.err = nil
 }
 
@@ -346,10 +373,10 @@ func (v *pVdr) base() Validate {
 
 func (v *pVdr) Check() error                            { return v.base().Check() }
 func (v *pVdr) SetContext(ctx context.Context) Validate { return v.base().SetContext(ctx) }
-func (v *pVdr) SetHttpRequest(r *http.Request) Validate { return v.base().SetHttpRequest(r) }
 func (v *pVdr) MakeStruct(s interface{}) Validate       { return v.base().MakeStruct(s) }
 func (v *pVdr) MakeMap(ms map[string]string) Validate   { return v.base().MakeMap(ms) }
-func (v *pVdr) MakeSlice(set ...[]string) Validate      { return v.MakeSlice(set...) }
+func (v *pVdr) MakeSlice(set ...[]string) Validate      { return v.base().MakeSlice(set...) }
+func (v *pVdr) MakeStructValue(s interface{}) Validate  { return v.base().MakeStructValue(s) }
 func (v *pVdr) MakeValue(val interface{}, exps ...string) Validate {
 	return v.base().MakeValue(val, exps...)
 }
@@ -359,9 +386,6 @@ var vde = NewPVdr()
 func Register(rules ...Validation)                       { vde.Register(rules...) }
 func SetHook(hooks ...Validation)                        { vde.SetHook(hooks...) }
 func SetContext(ctx context.Context) Validate            { return vde.SetContext(ctx) }
-func SetHttpRequest(r *http.Request) Validate            { return vde.SetHttpRequest(r) }
-func MakeStruct(s interface{}) Validate                  { return vde.MakeStruct(s) }
-func MakeMap(ms map[string]string) Validate              { return vde.MakeMap(ms) }
-func MakeSlice(set ...[]string) Validate                 { return vde.MakeSlice(set...) }
+func MakeStructValue(s interface{}) Validate             { return vde.MakeStructValue(s) }
 func MakeValue(val interface{}, exps ...string) Validate { return vde.MakeValue(val, exps...) }
 func Check() error                                       { return vde.Check() }

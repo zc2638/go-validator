@@ -25,6 +25,7 @@ const (
 
 	WithoutContext   = ValidError("context is nil")
 	SliceFormatError = ValidError("slice format error")
+	StructPtrError = ValidError("struct must be a pointer")
 )
 
 const (

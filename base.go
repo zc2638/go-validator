@@ -2,7 +2,6 @@ package validator
 
 import (
 	"context"
-	"net/http"
 )
 
 /**
@@ -10,27 +9,27 @@ import (
  */
 
 type Validation interface {
-	Name() string
-	SetCondition(...interface{}) error
-	Fire(*VdrEngine) error
+	Name() string                      // name
+	SetCondition(...interface{}) error // set condition
+	Fire(*VdrEngine) error             // exec
 }
 
 type Validate interface {
-	Register(...Validation)
-	SetHook(...Validation)
-	SetContext(context.Context) Validate
-	SetHttpRequest(*http.Request) Validate
-	MakeStruct(interface{}) Validate
-	MakeMap(map[string]string) Validate
-	MakeSlice(...[]string) Validate
-	MakeValue(interface{}, ...string) Validate
-	Check() error
+	Register(...Validation)                    // register rule
+	SetHook(...Validation)                     // set hook
+	SetContext(context.Context) Validate       // set context
+	MakeStruct(interface{}) Validate           // parse context with struct
+	MakeMap(map[string]string) Validate        // parse context with map
+	MakeSlice(...[]string) Validate            // parse context with slice
+	MakeStructValue(interface{}) Validate      // parse struct
+	MakeValue(interface{}, ...string) Validate // parse value
+	Check() error                              // check
 }
 
 type VdrEngine struct {
 	Name   string        // rule name
 	Params []interface{} // rule params
-	Err    error
-	Key    string
-	Val    interface{}
+	Err    error         // error
+	Key    string        // key
+	Val    interface{}   // value
 }

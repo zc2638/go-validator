@@ -19,7 +19,7 @@ func (*RuleRequired) Fire(e *VdrEngine) error {
 	if e.Val == nil {
 		return typ.NotRequired
 	}
-	tc := typ.NewTypeC(e.Val, typ.String)
+	tc := typ.NewTypeC(e.Val, reflect.String)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
@@ -49,7 +49,7 @@ func (r *RuleTypes) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleTypes) Fire(e *VdrEngine) error {
-	tc := typ.NewTypeC(e.Val, r.t)
+	tc := typ.NewTypeC(e.Val, typ.ChangeTypeToKind(r.t))
 	_, err := tc.Convert()
 	if err != nil {
 		return err
@@ -65,7 +65,7 @@ type RuleMax struct {
 func (r *RuleMax) Name() string { return "max" }
 func (r *RuleMax) SetCondition(cs ...interface{}) error {
 	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], typ.Float64)
+		tc := typ.NewTypeC(cs[0], reflect.Float64)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
@@ -76,7 +76,7 @@ func (r *RuleMax) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleMax) Fire(e *VdrEngine) error {
-	tc := typ.NewTypeC(e.Val, typ.Float64)
+	tc := typ.NewTypeC(e.Val, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
@@ -96,7 +96,7 @@ type RuleMin struct {
 func (r *RuleMin) Name() string { return "min" }
 func (r *RuleMin) SetCondition(cs ...interface{}) error {
 	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], typ.Float64)
+		tc := typ.NewTypeC(cs[0], reflect.Float64)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
@@ -107,7 +107,7 @@ func (r *RuleMin) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleMin) Fire(e *VdrEngine) error {
-	tc := typ.NewTypeC(e.Val, typ.Float64)
+	tc := typ.NewTypeC(e.Val, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err

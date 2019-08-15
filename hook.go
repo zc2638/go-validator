@@ -3,6 +3,7 @@ package validator
 import (
 	"errors"
 	"github.com/zc2638/go-validator/typ"
+	"reflect"
 )
 
 /**
@@ -19,7 +20,7 @@ func (h *HookMsg) Name() string {
 
 func (h *HookMsg) SetCondition(cs ...interface{}) error {
 	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], typ.String)
+		tc := typ.NewTypeC(cs[0], reflect.String)
 		if !tc.CheckKind() {
 			return typ.TypeNotString
 		}
