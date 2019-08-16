@@ -24,7 +24,8 @@ type vdr struct {
 	source       map[string]Validation
 	hooks        map[string]Validation
 	customSource map[string]Validation
-	set          []string
+	sourceSet    []string
+	hookSet      []string
 	engines      []*VdrEngine
 	err          error
 	mark         string
@@ -47,13 +48,13 @@ func (v *vdr) register(rules ...Validation) {
 	if v.source == nil {
 		v.source = make(map[string]Validation)
 	}
-	if v.set == nil {
-		v.set = make([]string, 0)
+	if v.sourceSet == nil {
+		v.sourceSet = make([]string, 0)
 	}
 	for _, rule := range rules {
 		if rule.Name() != "" {
 			v.source[rule.Name()] = rule
-			v.set = append(v.set, rule.Name())
+			v.sourceSet = append(v.sourceSet, rule.Name())
 		}
 	}
 }
@@ -81,34 +82,34 @@ func (v *vdr) SetHook(hooks ...Validation) {
 	if v.hooks == nil {
 		v.hooks = make(map[string]Validation)
 	}
-	if v.set == nil {
-		v.set = make([]string, 0)
+	if v.hookSet == nil {
+		v.hookSet = make([]string, 0)
 	}
 	for _, hook := range hooks {
 		if hook.Name() != "" {
 			v.hooks[hook.Name()] = hook
-			v.set = append(v.set, hook.Name())
+			v.hookSet = append(v.hookSet, hook.Name())
 		}
 	}
 }
 
 // 添加context，用于键校验
-func (v *vdr) SetContext(ctx context.Context) Validate {
+func (v *vdr) SetContext(ctx context.Context) Checker {
 	v.ctx = ctx
 	return v
 }
 
 // 创建struct验证
-func (v *vdr) MakeStruct(s interface{}) Validate {
+func (v *vdr) CheckStruct(s interface{}) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
-		return v
+		return v.err
 	}
 
 	t := reflect.TypeOf(s)
 	if t.Kind() != reflect.Ptr {
 		v.err = typ.StructPtrError
-		return v
+		return v.err
 	}
 	t = t.Elem()
 
@@ -128,42 +129,42 @@ func (v *vdr) MakeStruct(s interface{}) Validate {
 
 		if err := ts.SetValue(field, v.ctx.Value(fieldName)); err != nil {
 			v.err = err
-			return v
+			return v.err
 		}
 	}
-	return v.MakeStructValue(s)
+	return v.MakeStruct(s).Check()
 }
 
 // 创建map验证
 // "id": "required,max=20"
-func (v *vdr) MakeMap(ms map[string]string) Validate {
+func (v *vdr) CheckMap(ms map[string]string) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
-		return v
+		return v.err
 	}
 	for k, m := range ms {
 		v.MakeValue(v.ctx.Value(k), m)
 	}
-	return v
+	return v.Check()
 }
 
 // 创建slice验证
 // ["id", "required,max=20", "min=10"], ["age", "required", "max=100"]
-func (v *vdr) MakeSlice(set ...[]string) Validate {
+func (v *vdr) CheckSlice(set ...[]string) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
-		return v
+		return v.err
 	}
 	for _, s := range set {
 		if len(s) > 0 {
 			v.MakeValue(v.ctx.Value(s[0]), s[1:]...)
 		}
 	}
-	return v
+	return v.Check()
 }
 
 // 创建struct值验证
-func (v *vdr) MakeStructValue(s interface{}) Validate {
+func (v *vdr) MakeStruct(s interface{}) Validate {
 	val := reflect.ValueOf(s)
 	if val.Kind() == reflect.Ptr && !val.IsNil() {
 		val = val.Elem()
@@ -210,7 +211,7 @@ func (v *vdr) MakeValue(val interface{}, exps ...string) Validate {
 	return v
 }
 
-// TODO 解析条件
+// 解析条件
 func (v *vdr) parse(val interface{}, exps ...string) {
 
 	mark := CondMark
@@ -222,8 +223,13 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 		delimiter = v.delimiter
 	}
 
+	var set = make([]string, 0)
+	set = append(set, v.sourceSet...)
+	set = append(set, v.hookSet...)
+
 	expSet := strings.Split(strings.Join(exps, mark), mark)
-	var cs = make([]*VdrEngine, 0)
+	var sourceEs = make([]*Engine, 0)
+	var hookEs = make([]*Engine, 0)
 	var comb, expKey string
 	for _, e := range expSet {
 		if e == "" {
@@ -232,7 +238,7 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 
 		// 如果匹配上，则exp赋值
 		var exp string
-		for _, s := range v.set {
+		for _, s := range set {
 			if strings.HasPrefix(e, s) {
 				exp = s
 				break
@@ -252,32 +258,39 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 		// 如果exp不为空，则表示匹配上了，将comb内容做消化，comb重新赋值
 		if comb != "" {
 			expVal := strings.TrimPrefix(strings.TrimPrefix(comb, expKey+delimiter), expKey)
-			cs = append(cs, &VdrEngine{
-				Name:   expKey,
-				Params: []interface{}{expVal},
-				Val:    val,
-			})
+			engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Val: val}
+
+			if _, ok := v.source[engine.Name]; ok {
+				sourceEs = append(sourceEs, engine)
+			}
+			if _, ok := v.hooks[engine.Name]; ok {
+				hookEs = append(hookEs, engine)
+			}
 			expKey = exp
 		}
 		comb = e
 	}
 	if comb != "" {
-		for _, s := range v.set {
+		for _, s := range set {
 			if strings.HasPrefix(comb, s) {
 				expVal := strings.TrimPrefix(strings.TrimPrefix(comb, s+delimiter), s)
-				cs = append(cs, &VdrEngine{
-					Name:   expKey,
-					Params: []interface{}{expVal},
-					Val:    val,
-				})
+				engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Val: val}
+
+				if _, ok := v.source[engine.Name]; ok {
+					sourceEs = append(sourceEs, engine)
+				}
+				if _, ok := v.hooks[engine.Name]; ok {
+					hookEs = append(hookEs, engine)
+				}
 				break
 			}
 		}
 	}
+
 	if v.engines == nil {
 		v.engines = make([]*VdrEngine, 0)
 	}
-	v.engines = append(v.engines, cs...)
+	v.engines = append(v.engines, &VdrEngine{sourceEs, hookEs})
 }
 
 func (v *vdr) verify() {
@@ -289,35 +302,38 @@ func (v *vdr) verify() {
 	}
 
 	for _, e := range v.engines {
-		if v.err == nil {
-			if s, ok := v.source[e.Name]; ok {
-				if err := s.SetCondition(e.Params...); err != nil {
+		for _, re := range e.Rule {
+			if s, ok := v.source[re.Name]; ok {
+				if err := s.SetCondition(re.Params...); err != nil {
 					v.err = err
 					break
 				}
-				if err := s.Fire(e); err != nil {
-					v.err = err
+				if err := s.Fire(re); err != nil {
+					re.Err = err
+					for _, he := range e.Hook {
+						if h, ok := v.hooks[he.Name]; ok {
+							he.Err = re.Err
+							if err := h.SetCondition(he.Params...); err != nil {
+								he.Err = err
+							}
+							if err := h.Fire(he); err != nil {
+								he.Err = err
+							}
+							if he.Err != nil {
+								re.Err = he.Err
+								break
+							}
+						}
+					}
+					if re.Err != nil {
+						v.err = re.Err
+						goto end
+					}
 				}
 			}
 		}
 	}
-
-	for _, e := range v.engines {
-		if h, ok := v.source[e.Name]; ok {
-			if err := h.SetCondition(e.Params...); err != nil {
-				v.err = err
-				break
-			}
-			if err := h.Fire(e); err != nil {
-				v.err = err
-				break
-			}
-			if e.Err != nil {
-				v.err = e.Err
-				break
-			}
-		}
-	}
+end:
 }
 
 // 清空
@@ -371,12 +387,9 @@ func (v *pVdr) base() Validate {
 	return vdr
 }
 
-func (v *pVdr) Check() error                            { return v.base().Check() }
-func (v *pVdr) SetContext(ctx context.Context) Validate { return v.base().SetContext(ctx) }
-func (v *pVdr) MakeStruct(s interface{}) Validate       { return v.base().MakeStruct(s) }
-func (v *pVdr) MakeMap(ms map[string]string) Validate   { return v.base().MakeMap(ms) }
-func (v *pVdr) MakeSlice(set ...[]string) Validate      { return v.base().MakeSlice(set...) }
-func (v *pVdr) MakeStructValue(s interface{}) Validate  { return v.base().MakeStructValue(s) }
+func (v *pVdr) Check() error                           { return v.base().Check() }
+func (v *pVdr) SetContext(ctx context.Context) Checker { return v.base().SetContext(ctx) }
+func (v *pVdr) MakeStruct(s interface{}) Validate      { return v.base().MakeStruct(s) }
 func (v *pVdr) MakeValue(val interface{}, exps ...string) Validate {
 	return v.base().MakeValue(val, exps...)
 }
@@ -385,7 +398,7 @@ var vde = NewPVdr()
 
 func Register(rules ...Validation)                       { vde.Register(rules...) }
 func SetHook(hooks ...Validation)                        { vde.SetHook(hooks...) }
-func SetContext(ctx context.Context) Validate            { return vde.SetContext(ctx) }
-func MakeStructValue(s interface{}) Validate             { return vde.MakeStructValue(s) }
+func SetContext(ctx context.Context) Checker             { return vde.SetContext(ctx) }
+func MakeStruct(s interface{}) Validate                  { return vde.MakeStruct(s) }
 func MakeValue(val interface{}, exps ...string) Validate { return vde.MakeValue(val, exps...) }
 func Check() error                                       { return vde.Check() }

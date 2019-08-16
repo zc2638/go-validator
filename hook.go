@@ -29,7 +29,7 @@ func (h *HookMsg) SetCondition(cs ...interface{}) error {
 	return nil
 }
 
-func (h *HookMsg) Fire(e *VdrEngine) error {
+func (h *HookMsg) Fire(e *Engine) error {
 	if e.Err != nil {
 		e.Err = errors.New(h.s)
 	}

@@ -11,25 +11,33 @@ import (
 type Validation interface {
 	Name() string                      // name
 	SetCondition(...interface{}) error // set condition
-	Fire(*VdrEngine) error             // exec
+	Fire(*Engine) error                // exec
 }
 
 type Validate interface {
 	Register(...Validation)                    // register rule
 	SetHook(...Validation)                     // set hook
-	SetContext(context.Context) Validate       // set context
-	MakeStruct(interface{}) Validate           // parse context with struct
-	MakeMap(map[string]string) Validate        // parse context with map
-	MakeSlice(...[]string) Validate            // parse context with slice
-	MakeStructValue(interface{}) Validate      // parse struct
+	SetContext(context.Context) Checker        // set context
+	MakeStruct(interface{}) Validate           // parse struct
 	MakeValue(interface{}, ...string) Validate // parse value
 	Check() error                              // check
 }
 
+type Checker interface {
+	CheckStruct(interface{}) error    // parse context with struct
+	CheckMap(map[string]string) error // parse context with map
+	CheckSlice(...[]string) error     // parse context with slice
+}
+
 type VdrEngine struct {
-	Name   string        // rule name
-	Params []interface{} // rule params
-	Err    error         // error
-	Key    string        // key
-	Val    interface{}   // value
+	Rule []*Engine
+	Hook []*Engine
+}
+
+type Engine struct {
+	Name   string
+	Params []interface{}
+	Err    error
+	Key    string
+	Val    interface{}
 }

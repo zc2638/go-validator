@@ -15,7 +15,7 @@ type RuleRequired struct{}
 
 func (*RuleRequired) Name() string                      { return "required" }
 func (*RuleRequired) SetCondition(...interface{}) error { return nil }
-func (*RuleRequired) Fire(e *VdrEngine) error {
+func (*RuleRequired) Fire(e *Engine) error {
 	if e.Val == nil {
 		return typ.NotRequired
 	}
@@ -48,7 +48,7 @@ func (r *RuleTypes) SetCondition(cs ...interface{}) error {
 	return nil
 }
 
-func (r *RuleTypes) Fire(e *VdrEngine) error {
+func (r *RuleTypes) Fire(e *Engine) error {
 	tc := typ.NewTypeC(e.Val, typ.ChangeTypeToKind(r.t))
 	_, err := tc.Convert()
 	if err != nil {
@@ -75,7 +75,7 @@ func (r *RuleMax) SetCondition(cs ...interface{}) error {
 	return nil
 }
 
-func (r *RuleMax) Fire(e *VdrEngine) error {
+func (r *RuleMax) Fire(e *Engine) error {
 	tc := typ.NewTypeC(e.Val, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
@@ -106,7 +106,7 @@ func (r *RuleMin) SetCondition(cs ...interface{}) error {
 	return nil
 }
 
-func (r *RuleMin) Fire(e *VdrEngine) error {
+func (r *RuleMin) Fire(e *Engine) error {
 	tc := typ.NewTypeC(e.Val, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {

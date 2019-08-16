@@ -1,7 +1,6 @@
 package typ
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -31,7 +30,6 @@ func (t *typeS) SetValue(field reflect.StructField, value interface{}) error {
 		tc := NewTypeC(value, field.Type.Kind())
 		res, err := tc.Convert()
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
 		v.Set(reflect.ValueOf(res))

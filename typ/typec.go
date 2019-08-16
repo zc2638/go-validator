@@ -49,9 +49,13 @@ type typeC struct {
 	ck  reflect.Kind
 }
 
-func NewTypeC(val interface{}, kind reflect.Kind) *typeC {
-	rt := reflect.TypeOf(val)
-	return &typeC{val: val, ck: kind, k: rt.Kind()}
+func NewTypeC(val interface{}, kind reflect.Kind) (tc *typeC) {
+	tc = &typeC{ck: kind}
+	if val != nil {
+		tc.val = val
+		tc.k = reflect.TypeOf(val).Kind()
+	}
+	return
 }
 
 // 检查类型匹配
