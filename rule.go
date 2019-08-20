@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"errors"
 	"github.com/zc2638/go-validator/typ"
 	"reflect"
 	"strings"
@@ -16,16 +17,26 @@ type RuleRequired struct{}
 func (*RuleRequired) Name() string                      { return "required" }
 func (*RuleRequired) SetCondition(...interface{}) error { return nil }
 func (*RuleRequired) Fire(e *Engine) error {
-	if e.Val == nil {
-		return typ.NotRequired
+	value := reflect.ValueOf(e.Part.Value)
+	var errRequired = errors.New(e.Part.Key + "(" + value.Kind().String() + ") not required")
+
+	if e.Part.Value == nil {
+		return errRequired
 	}
-	tc := typ.NewTypeC(e.Val, reflect.String)
-	res, err := tc.Convert()
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(res.(string)) == "" {
-		return typ.NotRequired
+	switch value.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		if value.IsNil() {
+			return errRequired
+		}
+	default:
+		tc := typ.NewTypeC(e.Part.Value, reflect.String)
+		res, err := tc.Convert()
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(res.(string)) == "" {
+			return errRequired
+		}
 	}
 	return nil
 }
@@ -49,7 +60,7 @@ func (r *RuleTypes) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleTypes) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Val, typ.ChangeTypeToKind(r.t))
+	tc := typ.NewTypeC(e.Part.Value, typ.ChangeTypeToKind(r.t))
 	_, err := tc.Convert()
 	if err != nil {
 		return err
@@ -76,7 +87,7 @@ func (r *RuleMax) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleMax) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Val, reflect.Float64)
+	tc := typ.NewTypeC(e.Part.Value, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
@@ -107,7 +118,7 @@ func (r *RuleMin) SetCondition(cs ...interface{}) error {
 }
 
 func (r *RuleMin) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Val, reflect.Float64)
+	tc := typ.NewTypeC(e.Part.Value, reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
@@ -116,5 +127,28 @@ func (r *RuleMin) Fire(e *Engine) error {
 	if res.(float64) < r.n {
 		return typ.NumberMinLimit
 	}
+	return nil
+}
+
+// 验证长度
+type RuleLen struct {
+	len int
+}
+
+func (r *RuleLen) Name() string { return "len" }
+func (r *RuleLen) SetCondition(cs ...interface{}) error {
+	if len(cs) > 0 {
+		tc := typ.NewTypeC(cs[0], reflect.Int)
+		res, err := tc.Convert()
+		if err != nil {
+			return err
+		}
+		r.len = res.(int)
+	}
+	return nil
+}
+
+func (r *RuleLen) Fire(e *Engine) error {
+	// TODO
 	return nil
 }

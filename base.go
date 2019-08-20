@@ -8,6 +8,7 @@ import (
  * Created by zc on 2019-08-12.
  */
 
+// TODO 添加指定校验类型，如果不指定则默认支持的类型全部校验
 type Validation interface {
 	Name() string                      // name
 	SetCondition(...interface{}) error // set condition
@@ -35,9 +36,14 @@ type VdrEngine struct {
 }
 
 type Engine struct {
-	Name   string
-	Params []interface{}
-	Err    error
-	Key    string
-	Val    interface{}
+	Name   string        // rule name
+	Params []interface{} // rule condition params
+	Err    error         // error
+	Part   Part
+}
+
+type Part struct {
+	Key   string      // key
+	Value interface{} // value
+	Tag   string      // tag
 }

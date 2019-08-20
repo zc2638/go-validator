@@ -2,9 +2,11 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"github.com/zc2638/go-validator/typ"
 	"reflect"
 	"strings"
+	"unicode"
 )
 
 /**
@@ -15,10 +17,7 @@ const ValidTagName = "vdr"
 const CondMark = ","
 const Delimiter = "="
 
-// TODO 是否校验不存在的规则存在时抛错
-// TODO 增加一个并发安全的验证器
-
-// 两种验证器类型：1. 父验证器，用于自动创建子验证器 2. 子验证器，用于校验数据
+// 两种验证器类型：1. 父验证器，用于自动创s建子验证器 2. 子验证器，用于校验数据
 type vdr struct {
 	ctx          context.Context
 	source       map[string]Validation
@@ -37,6 +36,8 @@ func NewVdr() Validate {
 	validation := new(vdr)
 	validation.register(new(RuleRequired), new(RuleTypes), new(RuleMax), new(RuleMin))
 	validation.SetHook(new(HookMsg))
+	validation.mark = CondMark
+	validation.delimiter = Delimiter
 	return validation
 }
 
@@ -61,17 +62,7 @@ func (v *vdr) register(rules ...Validation) {
 
 // 注册自定义规则
 func (v *vdr) Register(rules ...Validation) {
-	if rules == nil || len(rules) == 0 {
-		return
-	}
-	if v.customSource == nil {
-		v.customSource = make(map[string]Validation)
-	}
-	for _, rule := range rules {
-		if rule.Name() != "" {
-			v.customSource[rule.Name()] = rule
-		}
-	}
+	v.register(rules...)
 }
 
 // 设置hook
@@ -99,7 +90,7 @@ func (v *vdr) SetContext(ctx context.Context) Checker {
 	return v
 }
 
-// 创建struct验证
+// struct验证
 func (v *vdr) CheckStruct(s interface{}) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
@@ -135,7 +126,7 @@ func (v *vdr) CheckStruct(s interface{}) error {
 	return v.MakeStruct(s).Check()
 }
 
-// 创建map验证
+// map验证
 // "id": "required,max=20"
 func (v *vdr) CheckMap(ms map[string]string) error {
 	if v.ctx == nil {
@@ -148,7 +139,7 @@ func (v *vdr) CheckMap(ms map[string]string) error {
 	return v.Check()
 }
 
-// 创建slice验证
+// slice验证
 // ["id", "required,max=20", "min=10"], ["age", "required", "max=100"]
 func (v *vdr) CheckSlice(set ...[]string) error {
 	if v.ctx == nil {
@@ -165,69 +156,125 @@ func (v *vdr) CheckSlice(set ...[]string) error {
 
 // 创建struct值验证
 func (v *vdr) MakeStruct(s interface{}) Validate {
-	val := reflect.ValueOf(s)
-	if val.Kind() == reflect.Ptr && !val.IsNil() {
-		val = val.Elem()
+	sv := reflect.ValueOf(s)
+	if sv.Kind() == reflect.Ptr && !sv.IsNil() {
+		sv = sv.Elem()
 	}
-
-	if val.Kind() == reflect.Struct {
-		t := val.Type()
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
-			fv := val.Field(i)
-
-			if tag, ok := field.Tag.Lookup(ValidTagName); ok {
-				// TODO 暂时只支持常用类型，map，slice，struct等后期补充
-				var value interface{}
-				switch field.Type.Kind() {
-				case reflect.String:
-					value = fv.String()
-				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-					value = fv.Int()
-				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-					value = fv.Uint()
-				case reflect.Float32, reflect.Float64:
-					value = fv.Float()
-				case reflect.Bool:
-					value = fv.Bool()
-				case reflect.Interface:
-					value = fv.Interface()
-				case reflect.Map:
-				case reflect.Array:
-				case reflect.Slice:
-				case reflect.Struct:
-				case reflect.Ptr:
-				}
-				v.MakeValue(value, tag)
-			}
-		}
+	if sv.Kind() == reflect.Struct {
+		v.handleStruct(sv)
 	}
 	return v
+}
+
+// 值处理
+func (v *vdr) handleValue(value reflect.Value, part Part) {
+	switch value.Type().Kind() {
+	case reflect.String:
+		part.Value = value.String()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		part.Value = value.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		part.Value = value.Uint()
+	case reflect.Float32, reflect.Float64:
+		part.Value = value.Float()
+	case reflect.Bool:
+		part.Value = value.Bool()
+	case reflect.Struct:
+		v.handleStruct(value)
+		part.Value = value.Interface()
+	case reflect.Map:
+		v.handleMap(value)
+		part.Value = value.Interface()
+	case reflect.Array, reflect.Slice:
+		v.handleSlice(value)
+		part.Value = value.Interface()
+	case reflect.Ptr:
+		if !value.IsNil() {
+			v.handleValue(value.Elem(), part)
+			return
+		}
+	case reflect.Interface:
+		if !value.IsNil() {
+			v.handleValue(reflect.ValueOf(value.Interface()), part)
+			return
+		}
+	}
+	v.makePart(part)
+}
+
+// struct处理
+func (v *vdr) handleStruct(value reflect.Value) {
+	for i := 0; i < value.NumField(); i++ {
+		field := value.Type().Field(i)
+		// 根据字段名首字母大小写判断是否私有字段
+		if unicode.IsLower(rune(field.Name[0])) {
+			v.err = errors.New("field " + field.Name + " is unexported")
+			break
+		}
+		v.handleValue(value.Field(i), Part{
+			Key: field.Name,
+			Tag: field.Tag.Get(ValidTagName),
+		})
+	}
+}
+
+// map处理
+func (v *vdr) handleMap(value reflect.Value) {
+	for _, key := range value.MapKeys() {
+		mv := value.MapIndex(key)
+		if mv.Kind() == reflect.Interface && !mv.IsNil() {
+			mv = reflect.ValueOf(mv.Interface())
+		}
+		if mv.Kind() == reflect.Ptr && !mv.IsNil() {
+			mv = mv.Elem()
+		}
+		if mv.Kind() == reflect.Struct {
+			v.handleStruct(mv)
+		}
+	}
+}
+
+// slice处理
+func (v *vdr) handleSlice(value reflect.Value) {
+	for i := 0; i < value.Len(); i++ {
+		sv := value.Index(i)
+		if sv.Kind() == reflect.Interface && !sv.IsNil() {
+			sv = reflect.ValueOf(sv.Interface())
+		}
+		if sv.Kind() == reflect.Ptr && !sv.IsNil() {
+			sv = sv.Elem()
+		}
+		if sv.Kind() == reflect.Struct {
+			v.handleStruct(sv)
+		}
+	}
 }
 
 // 创建值验证
 func (v *vdr) MakeValue(val interface{}, exps ...string) Validate {
-	v.parse(val, exps...)
+	v.makePart(Part{
+		Value: val,
+		Tag: strings.Join(exps, v.mark),
+	})
 	return v
 }
 
-// 解析条件
-func (v *vdr) parse(val interface{}, exps ...string) {
+// part处理
+func (v *vdr) makePart(part Part) {
+	if part.Tag == "" {
+		return
+	}
+	v.tagParse(part)
+}
 
-	mark := CondMark
-	delimiter := Delimiter
-	if v.mark != "" {
-		mark = v.mark
-	}
-	if v.delimiter != "" {
-		delimiter = v.delimiter
-	}
+// 解析条件
+func (v *vdr) tagParse(part Part) {
 
 	var set = make([]string, 0)
 	set = append(set, v.sourceSet...)
 	set = append(set, v.hookSet...)
 
-	expSet := strings.Split(strings.Join(exps, mark), mark)
+	expSet := strings.Split(part.Tag, v.mark)
 	var sourceEs = make([]*Engine, 0)
 	var hookEs = make([]*Engine, 0)
 	var comb, expKey string
@@ -247,7 +294,7 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 
 		// 如果exp为空，则表示未匹配上，comb做拼接
 		if exp == "" {
-			comb += mark + e
+			comb += v.mark + e
 			continue
 		}
 
@@ -257,8 +304,8 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 
 		// 如果exp不为空，则表示匹配上了，将comb内容做消化，comb重新赋值
 		if comb != "" {
-			expVal := strings.TrimPrefix(strings.TrimPrefix(comb, expKey+delimiter), expKey)
-			engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Val: val}
+			expVal := strings.TrimPrefix(strings.TrimPrefix(comb, expKey+v.delimiter), expKey)
+			engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Part: part}
 
 			if _, ok := v.source[engine.Name]; ok {
 				sourceEs = append(sourceEs, engine)
@@ -273,8 +320,8 @@ func (v *vdr) parse(val interface{}, exps ...string) {
 	if comb != "" {
 		for _, s := range set {
 			if strings.HasPrefix(comb, s) {
-				expVal := strings.TrimPrefix(strings.TrimPrefix(comb, s+delimiter), s)
-				engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Val: val}
+				expVal := strings.TrimPrefix(strings.TrimPrefix(comb, s+v.delimiter), s)
+				engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Part: part}
 
 				if _, ok := v.source[engine.Name]; ok {
 					sourceEs = append(sourceEs, engine)
@@ -327,13 +374,13 @@ func (v *vdr) verify() {
 					}
 					if re.Err != nil {
 						v.err = re.Err
-						goto end
+						goto END
 					}
 				}
 			}
 		}
 	}
-end:
+END:
 }
 
 // 清空
@@ -343,7 +390,7 @@ func (v *vdr) reset() {
 	v.err = nil
 }
 
-// 验证结果
+// 验证
 func (v *vdr) Check() error {
 	v.verify()
 	err := v.err

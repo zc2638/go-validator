@@ -1,7 +1,7 @@
 package typ
 
 const (
-	NotRequired    = ValidError("string is not required")
+	NotRequired    = ValidError("not required")
 	TypeNotSupport = ValidError("type not support")
 	TypeNotFound   = ValidError("type not found")
 	TypeNotString  = ValidError("type is not string")
@@ -25,7 +25,7 @@ const (
 
 	WithoutContext   = ValidError("context is nil")
 	SliceFormatError = ValidError("slice format error")
-	StructPtrError = ValidError("struct must be a pointer")
+	StructPtrError   = ValidError("struct must be a pointer")
 )
 
 const (
@@ -45,4 +45,12 @@ const (
 	Bool       = "bool"
 	Complex64  = "complex64"
 	Complex128 = "complex128"
+	Map        = "map"
+	Slice      = "slice"
+	Array      = "array"
+	Struct     = "struct"
 )
+
+type ValidError string
+
+func (e ValidError) Error() string { return string(e) }

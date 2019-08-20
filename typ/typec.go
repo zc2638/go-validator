@@ -5,10 +5,6 @@ import (
 	"strconv"
 )
 
-type ValidError string
-
-func (e ValidError) Error() string { return string(e) }
-
 func ChangeTypeToKind(typ string) (kind reflect.Kind) {
 	switch typ {
 	case String:
