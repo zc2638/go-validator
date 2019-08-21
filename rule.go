@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/zc2638/go-validator/typ"
 	"reflect"
+	"regexp"
 	"strings"
 )
 
@@ -14,141 +15,174 @@ import (
 // 验证字符串是否为空
 type RuleRequired struct{}
 
-func (*RuleRequired) Name() string                      { return "required" }
-func (*RuleRequired) SetCondition(...interface{}) error { return nil }
+func (*RuleRequired) Name() string { return "required" }
 func (*RuleRequired) Fire(e *Engine) error {
-	value := reflect.ValueOf(e.Part.Value)
+	value := e.Part.Value
 	var errRequired = errors.New(e.Part.Key + "(" + value.Kind().String() + ") not required")
-
-	if e.Part.Value == nil {
-		return errRequired
-	}
 	switch value.Kind() {
-	case reflect.Map, reflect.Slice, reflect.Array:
-		if value.IsNil() {
-			return errRequired
+	case reflect.Invalid:
+		e.Err = errRequired
+	case reflect.Map:
+		if len(value.MapKeys()) == 0 {
+			e.Err = errRequired
+		}
+	case reflect.Slice, reflect.Array:
+		if value.Len() == 0 {
+			e.Err = errRequired
 		}
 	default:
-		tc := typ.NewTypeC(e.Part.Value, reflect.String)
+		tc := typ.NewTypeC(value.Interface(), reflect.String)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
 		}
 		if strings.TrimSpace(res.(string)) == "" {
-			return errRequired
+			e.Err = errRequired
 		}
-	}
-	return nil
-}
-
-// 验证类型
-type RuleTypes struct {
-	t string
-}
-
-func (r *RuleTypes) Name() string { return "type" }
-func (r *RuleTypes) SetCondition(cs ...interface{}) error {
-	t := typ.String
-	if len(cs) > 0 {
-		if reflect.TypeOf(cs[0]).Kind() != reflect.String {
-			return typ.TypeNotString
-		}
-		t = cs[0].(string)
-	}
-	r.t = t
-	return nil
-}
-
-func (r *RuleTypes) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Part.Value, typ.ChangeTypeToKind(r.t))
-	_, err := tc.Convert()
-	if err != nil {
-		return err
 	}
 	return nil
 }
 
 // 验证最大值
-type RuleMax struct {
-	n float64
-}
+type RuleMax struct{}
 
-func (r *RuleMax) Name() string { return "max" }
-func (r *RuleMax) SetCondition(cs ...interface{}) error {
-	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], reflect.Float64)
+func (*RuleMax) Name() string { return "max" }
+func (*RuleMax) Fire(e *Engine) error {
+
+	required := new(RuleRequired)
+	if err := required.Fire(e); err != nil {
+		return err
+	}
+	if e.Err != nil {
+		return nil
+	}
+
+	var max float64
+	if e.Condition != "" {
+		tc := typ.NewTypeC(e.Condition, reflect.Float64)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
 		}
-		r.n = res.(float64)
+		max = res.(float64)
 	}
-	return nil
-}
 
-func (r *RuleMax) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Part.Value, reflect.Float64)
+	tc := typ.NewTypeC(e.Part.Value.Interface(), reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
 	}
 
-	if res.(float64) > r.n {
-		return typ.NumberMaxLimit
+	if res.(float64) > max {
+		e.Err = errors.New(e.Part.Key + "(" + e.Part.Value.Kind().String() + ") is over max limit")
 	}
 	return nil
 }
 
 // 验证最小值
-type RuleMin struct {
-	n float64
-}
+type RuleMin struct{}
 
-func (r *RuleMin) Name() string { return "min" }
-func (r *RuleMin) SetCondition(cs ...interface{}) error {
-	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], reflect.Float64)
+func (*RuleMin) Name() string { return "min" }
+func (*RuleMin) Fire(e *Engine) error {
+
+	required := new(RuleRequired)
+	if err := required.Fire(e); err != nil {
+		return err
+	}
+	if e.Err != nil {
+		return nil
+	}
+
+	var min float64
+	if e.Condition != "" {
+		tc := typ.NewTypeC(e.Condition, reflect.Float64)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
 		}
-		r.n = res.(float64)
+		min = res.(float64)
 	}
-	return nil
-}
 
-func (r *RuleMin) Fire(e *Engine) error {
-	tc := typ.NewTypeC(e.Part.Value, reflect.Float64)
+	tc := typ.NewTypeC(e.Part.Value.Interface(), reflect.Float64)
 	res, err := tc.Convert()
 	if err != nil {
 		return err
 	}
 
-	if res.(float64) < r.n {
-		return typ.NumberMinLimit
+	if res.(float64) < min {
+		e.Err = errors.New(e.Part.Key + "(" + e.Part.Value.Kind().String() + ") is below min limit")
 	}
 	return nil
 }
 
 // 验证长度
-type RuleLen struct {
-	len int
-}
+type RuleLen struct{}
 
-func (r *RuleLen) Name() string { return "len" }
-func (r *RuleLen) SetCondition(cs ...interface{}) error {
-	if len(cs) > 0 {
-		tc := typ.NewTypeC(cs[0], reflect.Int)
+func (*RuleLen) Name() string { return "len" }
+func (*RuleLen) Fire(e *Engine) error {
+	required := new(RuleRequired)
+	if err := required.Fire(e); err != nil {
+		return err
+	}
+	if e.Err != nil {
+		return nil
+	}
+
+	var length int
+	if e.Condition != "" {
+		tc := typ.NewTypeC(e.Condition, reflect.Int)
 		res, err := tc.Convert()
 		if err != nil {
 			return err
 		}
-		r.len = res.(int)
+		length = res.(int)
+	}
+
+	var num int
+	switch e.Part.Value.Kind() {
+	case reflect.Map:
+		num = len(e.Part.Value.MapKeys())
+	case reflect.Slice, reflect.Array:
+		num = e.Part.Value.Len()
+	default:
+		tc := typ.NewTypeC(e.Part.Value.Interface(), reflect.String)
+		res, err := tc.Convert()
+		if err != nil {
+			return err
+		}
+		num = strings.Count(res.(string), "") - 1
+	}
+
+	if num != length {
+		e.Err = errors.New(e.Part.Key + "(" + e.Part.Value.Kind().String() + ") length not match")
 	}
 	return nil
 }
 
-func (r *RuleLen) Fire(e *Engine) error {
-	// TODO
+// 正则
+type RuleRegexp struct{}
+
+func (*RuleRegexp) Name() string { return "reg" }
+func (*RuleRegexp) Fire(e *Engine) error {
+	required := new(RuleRequired)
+	if err := required.Fire(e); err != nil {
+		return err
+	}
+	if e.Err != nil {
+		return nil
+	}
+	if e.Part.Value.Kind() != reflect.String {
+		return errors.New(e.Part.Key + "(" + e.Part.Value.Kind().String() + ") is not string")
+	}
+
+	if e.Condition != "" {
+		reg, err := regexp.Compile(e.Condition)
+		if err != nil {
+			return err
+		}
+		if !reg.MatchString(e.Part.Value.String()) {
+			e.Err = errors.New(e.Part.Key + "(" + e.Part.Value.Kind().String() + ") not match")
+		}
+	}
 	return nil
 }

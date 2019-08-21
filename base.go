@@ -2,6 +2,7 @@ package validator
 
 import (
 	"context"
+	"reflect"
 )
 
 /**
@@ -9,10 +10,10 @@ import (
  */
 
 // TODO 添加指定校验类型，如果不指定则默认支持的类型全部校验
+// TODO 增加结构体条件校验方式
 type Validation interface {
-	Name() string                      // name
-	SetCondition(...interface{}) error // set condition
-	Fire(*Engine) error                // exec
+	Name() string         // name
+	Fire(e *Engine) error // exec
 }
 
 type Validate interface {
@@ -36,14 +37,14 @@ type VdrEngine struct {
 }
 
 type Engine struct {
-	Name   string        // rule name
-	Params []interface{} // rule condition params
-	Err    error         // error
-	Part   Part
+	Name      string // rule name
+	Condition string // rule condition
+	Err       error  // error
+	Part      Part
 }
 
 type Part struct {
-	Key   string      // key
-	Value interface{} // value
-	Tag   string      // tag
+	Key   string        // key
+	Value reflect.Value // value
+	Tag   string        // tag
 }

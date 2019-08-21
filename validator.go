@@ -13,16 +13,15 @@ import (
  * Created by zc on 2019-08-12.
  */
 
-const ValidTagName = "vdr"
-const CondMark = ","
-const Delimiter = "="
+const validTagName = "vdr"
+const condMark = ","
+const delimiter = "="
 
 // 两种验证器类型：1. 父验证器，用于自动创s建子验证器 2. 子验证器，用于校验数据
 type vdr struct {
 	ctx          context.Context
 	source       map[string]Validation
 	hooks        map[string]Validation
-	customSource map[string]Validation
 	sourceSet    []string
 	hookSet      []string
 	engines      []*VdrEngine
@@ -34,10 +33,10 @@ type vdr struct {
 // 创建一个默认的验证器
 func NewVdr() Validate {
 	validation := new(vdr)
-	validation.register(new(RuleRequired), new(RuleTypes), new(RuleMax), new(RuleMin))
+	validation.register(new(RuleRequired), new(RuleMax), new(RuleMin), new(RuleLen), new(RuleRegexp))
 	validation.SetHook(new(HookMsg))
-	validation.mark = CondMark
-	validation.delimiter = Delimiter
+	validation.mark = condMark
+	validation.delimiter = delimiter
 	return validation
 }
 
@@ -93,14 +92,12 @@ func (v *vdr) SetContext(ctx context.Context) Checker {
 // struct验证
 func (v *vdr) CheckStruct(s interface{}) error {
 	if v.ctx == nil {
-		v.err = typ.WithoutContext
-		return v.err
+		return typ.WithoutContext
 	}
 
 	t := reflect.TypeOf(s)
 	if t.Kind() != reflect.Ptr {
-		v.err = typ.StructPtrError
-		return v.err
+		return typ.StructPtrError
 	}
 	t = t.Elem()
 
@@ -119,28 +116,29 @@ func (v *vdr) CheckStruct(s interface{}) error {
 		}
 
 		if err := ts.SetValue(field, v.ctx.Value(fieldName)); err != nil {
-			v.err = err
-			return v.err
+			return err
 		}
 	}
 	return v.MakeStruct(s).Check()
 }
 
 // map验证
-// "id": "required,max=20"
 func (v *vdr) CheckMap(ms map[string]string) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
 		return v.err
 	}
 	for k, m := range ms {
-		v.MakeValue(v.ctx.Value(k), m)
+		v.makePart(Part{
+			Key:   k,
+			Value: reflect.ValueOf(v.ctx.Value(k)),
+			Tag:   m,
+		})
 	}
 	return v.Check()
 }
 
 // slice验证
-// ["id", "required,max=20", "min=10"], ["age", "required", "max=100"]
 func (v *vdr) CheckSlice(set ...[]string) error {
 	if v.ctx == nil {
 		v.err = typ.WithoutContext
@@ -148,7 +146,11 @@ func (v *vdr) CheckSlice(set ...[]string) error {
 	}
 	for _, s := range set {
 		if len(s) > 0 {
-			v.MakeValue(v.ctx.Value(s[0]), s[1:]...)
+			v.makePart(Part{
+				Key:   s[0],
+				Value: reflect.ValueOf(v.ctx.Value(s[0])),
+				Tag:   strings.Join(s[1:], v.mark),
+			})
 		}
 	}
 	return v.Check()
@@ -167,35 +169,29 @@ func (v *vdr) MakeStruct(s interface{}) Validate {
 }
 
 // 值处理
-func (v *vdr) handleValue(value reflect.Value, part Part) {
-	switch value.Type().Kind() {
+func (v *vdr) handleValue(part Part) {
+	switch part.Value.Type().Kind() {
 	case reflect.String:
-		part.Value = value.String()
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		part.Value = value.Int()
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		part.Value = value.Uint()
 	case reflect.Float32, reflect.Float64:
-		part.Value = value.Float()
 	case reflect.Bool:
-		part.Value = value.Bool()
 	case reflect.Struct:
-		v.handleStruct(value)
-		part.Value = value.Interface()
+		v.handleStruct(part.Value)
 	case reflect.Map:
-		v.handleMap(value)
-		part.Value = value.Interface()
+		v.handleMap(part.Value)
 	case reflect.Array, reflect.Slice:
-		v.handleSlice(value)
-		part.Value = value.Interface()
+		v.handleSlice(part.Value)
 	case reflect.Ptr:
-		if !value.IsNil() {
-			v.handleValue(value.Elem(), part)
+		if !part.Value.IsNil() {
+			part.Value = part.Value.Elem()
+			v.handleValue(part)
 			return
 		}
 	case reflect.Interface:
-		if !value.IsNil() {
-			v.handleValue(reflect.ValueOf(value.Interface()), part)
+		if !part.Value.IsNil() {
+			part.Value = reflect.ValueOf(part.Value.Interface())
+			v.handleValue(part)
 			return
 		}
 	}
@@ -211,9 +207,10 @@ func (v *vdr) handleStruct(value reflect.Value) {
 			v.err = errors.New("field " + field.Name + " is unexported")
 			break
 		}
-		v.handleValue(value.Field(i), Part{
-			Key: field.Name,
-			Tag: field.Tag.Get(ValidTagName),
+		v.handleValue(Part{
+			Key:   field.Name,
+			Value: value.Field(i),
+			Tag:   field.Tag.Get(validTagName),
 		})
 	}
 }
@@ -253,8 +250,8 @@ func (v *vdr) handleSlice(value reflect.Value) {
 // 创建值验证
 func (v *vdr) MakeValue(val interface{}, exps ...string) Validate {
 	v.makePart(Part{
-		Value: val,
-		Tag: strings.Join(exps, v.mark),
+		Value: reflect.ValueOf(val),
+		Tag:   strings.Join(exps, v.mark),
 	})
 	return v
 }
@@ -305,7 +302,7 @@ func (v *vdr) tagParse(part Part) {
 		// 如果exp不为空，则表示匹配上了，将comb内容做消化，comb重新赋值
 		if comb != "" {
 			expVal := strings.TrimPrefix(strings.TrimPrefix(comb, expKey+v.delimiter), expKey)
-			engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Part: part}
+			engine := &Engine{Name: expKey, Condition: expVal, Part: part}
 
 			if _, ok := v.source[engine.Name]; ok {
 				sourceEs = append(sourceEs, engine)
@@ -321,7 +318,7 @@ func (v *vdr) tagParse(part Part) {
 		for _, s := range set {
 			if strings.HasPrefix(comb, s) {
 				expVal := strings.TrimPrefix(strings.TrimPrefix(comb, s+v.delimiter), s)
-				engine := &Engine{Name: expKey, Params: []interface{}{expVal}, Part: part}
+				engine := &Engine{Name: expKey, Condition: expVal, Part: part}
 
 				if _, ok := v.source[engine.Name]; ok {
 					sourceEs = append(sourceEs, engine)
@@ -350,33 +347,32 @@ func (v *vdr) verify() {
 
 	for _, e := range v.engines {
 		for _, re := range e.Rule {
-			if s, ok := v.source[re.Name]; ok {
-				if err := s.SetCondition(re.Params...); err != nil {
-					v.err = err
-					break
-				}
-				if err := s.Fire(re); err != nil {
-					re.Err = err
-					for _, he := range e.Hook {
-						if h, ok := v.hooks[he.Name]; ok {
-							he.Err = re.Err
-							if err := h.SetCondition(he.Params...); err != nil {
-								he.Err = err
-							}
-							if err := h.Fire(he); err != nil {
-								he.Err = err
-							}
-							if he.Err != nil {
-								re.Err = he.Err
-								break
-							}
-						}
+			s, ok := v.source[re.Name]
+			if !ok {
+				continue
+			}
+			if err := s.Fire(re); err != nil {
+				v.err = err
+				goto END
+			}
+
+			for _, he := range e.Hook {
+				if h, ok := v.hooks[he.Name]; ok {
+					he.Err = re.Err
+					if err := h.Fire(he); err != nil {
+						v.err = err
+						goto END
 					}
-					if re.Err != nil {
-						v.err = re.Err
+					if he.Err != nil {
+						v.err = he.Err
 						goto END
 					}
 				}
+			}
+
+			if re.Err != nil {
+				v.err = re.Err
+				goto END
 			}
 		}
 	}
