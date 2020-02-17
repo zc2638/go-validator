@@ -103,6 +103,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 
 	var res interface{}
 	var err error = TypeNotFound
+	if str == "" {
+		return 0, nil
+	}
 
 	switch t.ck {
 	case reflect.Interface:
