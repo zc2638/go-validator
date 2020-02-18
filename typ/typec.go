@@ -103,9 +103,6 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 
 	var res interface{}
 	var err error = TypeNotFound
-	if str == "" {
-		return 0, nil
-	}
 
 	switch t.ck {
 	case reflect.Interface:
@@ -113,11 +110,17 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 	case reflect.String:
 		return str, nil
 	case reflect.Int:
+		if str == "" {
+			return 0, nil
+		}
 		res, err = strconv.Atoi(str)
 		if err != nil {
 			err = TypeNotInt
 		}
 	case reflect.Int8:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseInt(str, 10, 8)
 		if e != nil {
 			err = TypeNotInt8
@@ -125,6 +128,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = int8(r)
 		}
 	case reflect.Int16:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseInt(str, 10, 16)
 		if e != nil {
 			err = TypeNotInt16
@@ -132,6 +138,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = int16(r)
 		}
 	case reflect.Int32:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseInt(str, 10, 32)
 		if e != nil {
 			err = TypeNotInt32
@@ -139,6 +148,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = int32(r)
 		}
 	case reflect.Int64:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseInt(str, 10, 64)
 		if e != nil {
 			err = TypeNotInt64
@@ -146,6 +158,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = int64(r)
 		}
 	case reflect.Uint:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseUint(str, 10, 0)
 		if e != nil {
 			err = TypeNotUint
@@ -153,6 +168,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = uint(r)
 		}
 	case reflect.Uint8:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseUint(str, 10, 8)
 		if e != nil {
 			err = TypeNotUint8
@@ -160,6 +178,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = uint8(r)
 		}
 	case reflect.Uint16:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseUint(str, 10, 16)
 		if e != nil {
 			err = TypeNotUint16
@@ -167,6 +188,9 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = uint16(r)
 		}
 	case reflect.Uint32:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseUint(str, 10, 32)
 		if e != nil {
 			err = TypeNotUint32
@@ -174,11 +198,17 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = uint32(r)
 		}
 	case reflect.Uint64:
+		if str == "" {
+			return 0, nil
+		}
 		res, err = strconv.ParseUint(str, 10, 64)
 		if err != nil {
 			err = TypeNotUint64
 		}
 	case reflect.Float32:
+		if str == "" {
+			return 0, nil
+		}
 		r, e := strconv.ParseFloat(str, 32)
 		if e != nil {
 			err = TypeNotFloat32
@@ -186,11 +216,17 @@ func (t *typeC) stringToType(str string) (interface{}, error) {
 			res = float32(r)
 		}
 	case reflect.Float64:
+		if str == "" {
+			return 0, nil
+		}
 		res, err = strconv.ParseFloat(str, 64)
 		if err != nil {
 			err = TypeNotFloat64
 		}
 	case reflect.Bool:
+		if str == "" {
+			return false, nil
+		}
 		res, err = strconv.ParseBool(str)
 		if err != nil {
 			err = TypeNotBool
