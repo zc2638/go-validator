@@ -1,3 +1,6 @@
+/**
+ * Created by zc on 2020/7/5.
+ */
 package main
 
 import (
@@ -6,16 +9,14 @@ import (
 	"log"
 )
 
-/**
- * Created by zc on 2019-08-21.
- */
+type Group []User
 
 type User struct {
-	Name  interface{} `json:"name" vdr:"required,msg=姓名,必填"`
-	Age   int         `json:"age" vdr:"required,max=22,msg=年龄不对"`
+	Name  interface{}            `json:"name" vdr:"required,msg=姓名,必填"`
+	Age   int                    `json:"age" vdr:"required,max=22,msg=年龄不对"`
 	M     map[string]interface{}
-	Addr  Addr   `json:"addr"`
-	Cates []Cate `json:"cates"`
+	Addr  Addr                   `json:"addr"`
+	Cates []Cate                 `json:"cates"`
 }
 
 func (u *User) Validate(validate validator.Validation) {
@@ -58,7 +59,7 @@ func (c *Cate) Validate(validate validator.Validation) {
 	validate.MakeValue(&c.Name, validator.RuleRequiredWithMessage("cate name 为空"))
 }
 
-var str = `{
+var str = `[{
   "age": 25,
   "m": {},
   "addr": {
@@ -67,21 +68,12 @@ var str = `{
   "cates": [
   	{ "name": "123" }
   ]
-}`
+}]`
 
 func main() {
-	var user = User{
-		Name: nil,
-		Age:  18,
-		M: map[string]interface{}{
-			"test": "Hello",
-		},
-		Addr: Addr{
-			Name: "北京市",
-		},
-	}
+	var group Group
 	engine := validator.Default()
-	engine.Handle(&user)
+	engine.HandleSlice(&group, validator.MakeSliceHandler(&User{}))
 	if err := engine.Check([]byte(str)); err != nil {
 		log.Fatal(err)
 	}
