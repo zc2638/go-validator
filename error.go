@@ -10,11 +10,11 @@ import (
 
 type Error struct {
 	path string
-	e    error
+	err  error
 }
 
 func (e *Error) Error() string {
-	return e.e.Error()
+	return e.err.Error()
 }
 
 type ErrorChains []Error
@@ -25,7 +25,7 @@ func (e ErrorChains) Error() string {
 		path := strings.ReplaceAll(err.path, SignSlice, "")
 		buffer.WriteString(path)
 		buffer.WriteString(": ")
-		buffer.WriteString(err.e.Error())
+		buffer.WriteString(err.err.Error())
 		buffer.WriteString("\n")
 	}
 	return buffer.String()

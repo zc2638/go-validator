@@ -188,7 +188,7 @@ func (v *validate) checkLoop(data Current, keys map[string][]string, pre string)
 			if err != nil {
 				chains = append(chains, Error{
 					path: path,
-					e:    err,
+					err:  err,
 				})
 				continue
 			}
@@ -251,7 +251,7 @@ func (v *validate) checkLoopDirect(data Current, keys map[string][]string, pre s
 			if err != nil {
 				return &Error{
 					path: path,
-					e:    err,
+					err:  err,
 				}
 			}
 		}

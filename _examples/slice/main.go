@@ -59,22 +59,26 @@ func (c *Cate) Validate(validate validator.Validation) {
 }
 
 var str = `[{
+  "name": "李四",
   "age": 25,
   "m": {},
   "addr": {
-  	"name": "上海"
+  	"name": "上海",
+    "point": {
+      "x": 22
+    }
   },
   "cates": [
   	{ "name": "123" }
   ]
-}, {}]`
+}]`
 
 func main() {
 	var group Group
 	engine := validator.Default()
 	engine.HandleSlice(&group, validator.MakeSliceHandler(&User{}))
+	fmt.Println()
 	if err := engine.Check([]byte(str)); err != nil {
-		fmt.Println()
 		fmt.Println(err)
 	}
 }
