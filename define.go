@@ -72,6 +72,14 @@ func Default() *Engine {
 	return e
 }
 
+func Direct() *Engine {
+	e := &Engine{}
+	e.formatter = JSONFormatter()
+	e.cover = JSONCover()
+	e.validation = newValidateDirect()
+	return e
+}
+
 func (e *Engine) SetFormatter(formatter Formatter) {
 	if formatter != nil {
 		e.formatter = formatter

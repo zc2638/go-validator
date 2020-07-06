@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/zc2638/go-validator"
-	"log"
 )
 
 /**
@@ -59,10 +58,14 @@ func (c *Cate) Validate(validate validator.Validation) {
 }
 
 var str = `{
+  "name": "张三",
   "age": 25,
   "m": {},
   "addr": {
-  	"name": "上海"
+  	"name": "上海",
+	"point": {
+		"x": 12
+	}
   },
   "cates": [
   	{ "name": "123" }
@@ -70,19 +73,13 @@ var str = `{
 }`
 
 func main() {
-	var user = User{
-		Name: nil,
-		Age:  18,
-		M: map[string]interface{}{
-			"test": "Hello",
-		},
-		Addr: Addr{
-			Name: "北京市",
-		},
-	}
-	engine := validator.Default()
+	var user User
+	engine := validator.Direct()
 	engine.Handle(&user)
-	if err := engine.Check([]byte(str)); err != nil {
-		log.Fatal(err)
+	if err := engine.Unmarshal([]byte(str), &user); err != nil {
+		fmt.Println()
+		fmt.Println(err)
+		return
 	}
+	fmt.Printf("%+v", user)
 }

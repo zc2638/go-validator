@@ -126,75 +126,164 @@ func (v *validate) MakeField(name string, vfs ...ValidateFunc) {
 }
 
 func (v *validate) Check(current Current) error {
-	keys := make(map[string]string)
+	// 由于切片入参是多组，所以key对应源path组
+	keys := make(map[string][]string)
 	for k := range current {
 		path := buildSlicePath(k)
-		keys[path] = k
+		keys[path] = append(keys[path], k)
 	}
-	return v.checkLoop(current, keys)
+	if err := v.checkLoop(current, keys, ""); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (v *validate) checkLoop(data Current, keys map[string]string) ErrorChains {
+func (v *validate) checkLoop(data Current, keys map[string][]string, pre string) ErrorChains {
 	var chains ErrorChains
 	// 循环校验结构
 	// TODO 暂不考虑指针处理
 	for _, vv := range v.vs {
 		fmt.Printf("%+v \n", vv)
-		if vv.sign == SignSlice {
-			chains = append(chains, vv.checkLoop(data, keys)...)
+		// TODO slice校验不可控，考虑碰到slice采用树杈校验的方法，增加slice prefix参数，后续校验path替换pre
+		// TODO 如果解析到的paths为空，则以pre + name处理
+		if vv.path == "" {
+			chains = append(chains, vv.checkLoop(data, keys, "")...)
 			continue
 		}
-		// 如果有子集且有校验集，校验通过则继续向下校验，否则不校验子集
-		if len(vv.vs) > 0 {
-			if len(vv.vfs) > 0 {
-				path := keys[vv.path]
-				var val interface{}
-				if path != "" {
-					val = data[path]
-				}
-				var err error
-				for _, vf := range vv.vfs {
-					if err = vf(val); err != nil {
-						break
-					}
-				}
-				if err != nil {
-					chains = append(chains, Error{
-						path: vv.path,
-						e:    err,
-					})
-					continue
+		// 拼接path
+		path := buildPath(pre, vv.name)
+		// 如果类型为切片，入参无值跳过，如 arr: []
+		// TODO 考虑多组数据的情况，需要分叉处理
+		if vv.name == SignSlice {
+			transPaths := keys[vv.path]
+			if len(transPaths) > 0 {
+				for _, tp := range transPaths {
+					chains = append(chains, vv.checkLoop(data, keys, tp)...)
 				}
 			}
-			// 如果类型为切片，入参无值跳过，如 arr: []
-			if vv.name == SignSlice {
-				path := keys[vv.path]
-				val, ok := data[path]
-				if !ok {
-					continue
-				}
-				// slice长度为空，跳过
-				if reflect.ValueOf(val).Len() == 0 {
-					continue
-				}
-			}
-			chains = append(chains, vv.checkLoop(data, keys)...)
-		} else {
-			if len(vv.vfs) == 0 {
-				continue
-			}
-			path := keys[vv.path]
-			val := data[path]
-			for _, vf := range vv.vfs {
-				if err := vf(val); err != nil {
-					chains = append(chains, Error{
-						path: vv.path,
-						e:    err,
-					})
+			continue
+		}
+
+		// 如果有校验集，校验通过则继续向下校验，否则不校验子集
+		if len(vv.vfs) > 0 {
+			transPaths := keys[vv.path]
+			var currentPath string
+			for _, tp := range transPaths {
+				if tp == path {
+					currentPath = tp
 					break
 				}
 			}
+			// 匹配到正常校验，未匹配到按nil校验
+			var val interface{}
+			if currentPath != "" {
+				val = data[currentPath]
+			}
+			var err error
+			for _, vf := range vv.vfs {
+				if err = vf(val); err != nil {
+					break
+				}
+			}
+			if err != nil {
+				chains = append(chains, Error{
+					path: path,
+					e:    err,
+				})
+				continue
+			}
+		}
+		if len(vv.vs) > 0 {
+			chains = append(chains, vv.checkLoop(data, keys, path)...)
 		}
 	}
 	return chains
+}
+
+func (v *validate) verify(val interface{}, vfs []ValidateFunc) error {
+	for _, vf := range vfs {
+		if err := vf(val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v *validate) checkLoopDirect(data Current, keys map[string][]string, pre string) *Error {
+	for _, vv := range v.vs {
+		if vv.path == "" {
+			if err := vv.checkLoopDirect(data, keys, ""); err != nil {
+				return err
+			}
+			continue
+		}
+		path := buildPath(pre, vv.name)
+		if vv.name == SignSlice {
+			transPaths := keys[vv.path]
+			if len(transPaths) > 0 {
+				for _, tp := range transPaths {
+					if err := vv.checkLoopDirect(data, keys, tp); err != nil {
+						return err
+					}
+				}
+			}
+			continue
+		}
+		if len(vv.vfs) > 0 {
+			transPaths := keys[vv.path]
+			var currentPath string
+			for _, tp := range transPaths {
+				if tp == path {
+					currentPath = tp
+					break
+				}
+			}
+			var val interface{}
+			if currentPath != "" {
+				val = data[currentPath]
+			}
+			var err error
+			for _, vf := range vv.vfs {
+				if err = vf(val); err != nil {
+					break
+				}
+			}
+			if err != nil {
+				return &Error{
+					path: path,
+					e:    err,
+				}
+			}
+		}
+		if len(vv.vs) > 0 {
+			if err := vv.checkLoopDirect(data, keys, path); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+type validateDirect struct {
+	validate
+}
+
+func newValidateDirect() *validateDirect {
+	return &validateDirect{
+		validate: validate{
+			tag: TagJSON,
+		},
+	}
+}
+
+func (v *validateDirect) Check(current Current) error {
+	keys := make(map[string][]string)
+	for k := range current {
+		path := buildSlicePath(k)
+		keys[path] = append(keys[path], k)
+	}
+	if err := v.checkLoopDirect(current, keys, ""); err != nil {
+		return err
+	}
+	return nil
 }

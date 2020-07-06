@@ -40,3 +40,28 @@ func buildPath(paths ...string) string {
 	}
 	return pathBs
 }
+
+func buildSlicePath(path string) string {
+	paths := strings.Split(path, ".")
+	var buffer bytes.Buffer
+	for _, p := range paths {
+		index := strings.Index(p, SignSlice)
+		if index == 0 {
+			p = SignSlice
+		}
+		buffer.WriteString(p)
+		buffer.WriteString(".")
+	}
+	bs := buffer.Bytes()
+	pathBs := bs[:len(bs)-1]
+	return string(pathBs)
+}
+
+func getSlicePathPrefix(path string) (prefix, suffix string) {
+	index := strings.LastIndex(path, SignSlice)
+	if index >= 0 {
+		length := index + len(SignSlice)
+		return path[:length], path[length:]
+	}
+	return "", path
+}

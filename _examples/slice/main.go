@@ -6,7 +6,6 @@ package main
 import (
 	"fmt"
 	"github.com/zc2638/go-validator"
-	"log"
 )
 
 type Group []User
@@ -68,13 +67,14 @@ var str = `[{
   "cates": [
   	{ "name": "123" }
   ]
-}]`
+}, {}]`
 
 func main() {
 	var group Group
 	engine := validator.Default()
 	engine.HandleSlice(&group, validator.MakeSliceHandler(&User{}))
 	if err := engine.Check([]byte(str)); err != nil {
-		log.Fatal(err)
+		fmt.Println()
+		fmt.Println(err)
 	}
 }
