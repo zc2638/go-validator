@@ -26,6 +26,7 @@ type Checker interface {
 	Check(current Current) error
 }
 
+// TODO 增加默认类型校验方法
 // 结构解析定义
 type Validator interface {
 	Make(handler Handler, vfs ...ValidateFunc)                   // parse struct

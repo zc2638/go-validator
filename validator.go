@@ -4,7 +4,6 @@
 package validator
 
 import (
-	"fmt"
 	"reflect"
 )
 
@@ -79,7 +78,12 @@ func (v *validate) decompose(rv reflect.Value, vdr *validate) {
 			name = camelToUnderline(ft.Name)
 		}
 		fv := rv.Field(i)
-		vdr.append(name, &fv)
+		vfType := autoMountRuleType(ft.Type.Kind())
+		if vfType == nil {
+			vdr.append(name, &fv)
+		} else {
+			vdr.append(name, &fv, vfType)
+		}
 	}
 }
 
@@ -98,7 +102,7 @@ func (v *validate) Make(s Handler, vfs ...ValidateFunc) {
 	s.Validate(vdr)
 }
 
-// 将结构体处理的字段中slice类型的赋予验证方法
+// 处理slice
 func (v *validate) MakeSlice(val interface{}, f HandlerFunc, vfs ...ValidateFunc) {
 	rv := Value(val)
 	if rv.Type().Kind() != reflect.Slice {
@@ -112,7 +116,7 @@ func (v *validate) MakeSlice(val interface{}, f HandlerFunc, vfs ...ValidateFunc
 	}
 }
 
-// 将结构体处理的字段中基础类型的赋予验证方法
+// 处理基础值
 func (v *validate) MakeValue(val interface{}, vfs ...ValidateFunc) {
 	rv := Value(val)
 	if !rv.CanAddr() {
@@ -138,14 +142,20 @@ func (v *validate) Check(current Current) error {
 	return nil
 }
 
+func (v *validate) verify(val interface{}, vfs []ValidateFunc) error {
+	for _, vf := range vfs {
+		if err := vf(val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (v *validate) checkLoop(data Current, keys map[string][]string, pre string) ErrorChains {
 	var chains ErrorChains
 	// 循环校验结构
 	// TODO 暂不考虑指针处理
 	for _, vv := range v.vs {
-		fmt.Printf("%+v \n", vv)
-		// TODO slice校验不可控，考虑碰到slice采用树杈校验的方法，增加slice prefix参数，后续校验path替换pre
-		// TODO 如果解析到的paths为空，则以pre + name处理
 		if vv.path == "" {
 			chains = append(chains, vv.checkLoop(data, keys, "")...)
 			continue
@@ -153,7 +163,6 @@ func (v *validate) checkLoop(data Current, keys map[string][]string, pre string)
 		// 拼接path
 		path := buildPath(pre, vv.name)
 		// 如果类型为切片，入参无值跳过，如 arr: []
-		// TODO 考虑多组数据的情况，需要分叉处理
 		if vv.name == SignSlice {
 			transPaths := keys[vv.path]
 			if len(transPaths) > 0 {
@@ -200,15 +209,6 @@ func (v *validate) checkLoop(data Current, keys map[string][]string, pre string)
 	return chains
 }
 
-func (v *validate) verify(val interface{}, vfs []ValidateFunc) error {
-	for _, vf := range vfs {
-		if err := vf(val); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (v *validate) checkLoopDirect(data Current, keys map[string][]string, pre string) *Error {
 	for _, vv := range v.vs {
 		if vv.path == "" {
@@ -242,16 +242,9 @@ func (v *validate) checkLoopDirect(data Current, keys map[string][]string, pre s
 			if currentPath != "" {
 				val = data[currentPath]
 			}
-			var err error
 			for _, vf := range vv.vfs {
-				if err = vf(val); err != nil {
-					break
-				}
-			}
-			if err != nil {
-				return &Error{
-					path: path,
-					err:  err,
+				if err := vf(val); err != nil {
+					return &Error{path: path, err: err}
 				}
 			}
 		}

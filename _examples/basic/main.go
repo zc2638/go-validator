@@ -58,7 +58,8 @@ func (c *Cate) Validate(validate validator.Validation) {
 }
 
 var str = `{
-  "age": 25,
+  "name": 12,
+  "age": "25",
   "m": {},
   "addr": {
   	"name": "上海",
@@ -87,7 +88,7 @@ func main() {
 
 func VerifyFields() {
 	engine := validator.Direct()
-	h := engine.Handle(nil)
+	h := engine.Handle(validator.HandlerFunc(test))
 	h.MakeField("name", validator.RuleRequiredWithMessage("用户名不能为空"))
 	fmt.Println()
 	if err := engine.Check([]byte(str)); err != nil {
@@ -95,4 +96,8 @@ func VerifyFields() {
 		return
 	}
 	fmt.Println("fields verify pass")
+}
+
+func test(validate validator.Validation) {
+	validate.MakeField("name", validator.RuleRequiredWithMessage("用户名不能为空"))
 }
