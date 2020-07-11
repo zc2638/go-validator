@@ -4,6 +4,7 @@
 package validator
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -122,6 +123,33 @@ func Test_camelToUnderline(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := camelToUnderline(tt.args.s); got != tt.want {
 				t.Errorf("camelToUnderline() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValue(t *testing.T) {
+	test1 := "name"
+	type args struct {
+		val interface{}
+	}
+	tests := []struct {
+		name string
+		args args
+		want reflect.Value
+	}{
+		{
+			name: "test1",
+			args: args{
+				val: &test1,
+			},
+			want: reflect.ValueOf(&test1).Elem(),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Value(tt.args.val); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Value() = %v, want %v", got, tt.want)
 			}
 		})
 	}
