@@ -5,8 +5,18 @@ package validator
 
 import (
 	"bytes"
+	"reflect"
 	"strings"
 )
+
+// value returns the reflect Value of val
+func Value(val interface{}) reflect.Value {
+	rv := reflect.ValueOf(val)
+	if rv.Kind() == reflect.Ptr {
+		rv = rv.Elem()
+	}
+	return rv
+}
 
 func camelToUnderline(s string) string {
 	num := len(s)
@@ -55,13 +65,4 @@ func buildSlicePath(path string) string {
 	bs := buffer.Bytes()
 	pathBs := bs[:len(bs)-1]
 	return string(pathBs)
-}
-
-func getSlicePathPrefix(path string) (prefix, suffix string) {
-	index := strings.LastIndex(path, SignSlice)
-	if index >= 0 {
-		length := index + len(SignSlice)
-		return path[:length], path[length:]
-	}
-	return "", path
 }
